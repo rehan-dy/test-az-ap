@@ -1,48 +1,48 @@
-﻿using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
+﻿using System;
+using System.Net;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Dynatrace.OneAgent.Sdk.Api;
 
-var builder = WebApplication.CreateBuilder(args);
-
-// Create OneAgent SDK instance
-IOneAgentSdk oneAgentSdk = OneAgentSdkFactory.CreateInstance();
-
-// Add services to the container.
-builder.Services.AddSingleton<IOneAgentSdk>(oneAgentSdk);
-
-var app = builder.Build();
-
-// Configure the HTTP request pipeline.
-if (!app.Environment.IsDevelopment())
+class Program
 {
-    app.UseExceptionHandler("/Error");
-    app.UseHsts();
+    static async Task Main(string[] args)
+    {
+        // Create OneAgent SDK instance
+        IOneAgentSdk oneAgentSdk = OneAgentSdkFactory.CreateInstance();
+
+        // Set up a simple HTTP server
+        string url = "http://*:80/";
+        using (var listener = new HttpListener())
+        {
+            listener.Prefixes.Add(url);
+            listener.Start();
+            Console.WriteLine($"Listening on {url}");
+
+            while (true)
+            {
+                var context = await listener.GetContextAsync();
+                var response = context.Response;
+
+                var traceContextInfo = oneAgentSdk.TraceContextInfo;
+                var traceId = traceContextInfo.TraceId;
+                var spanId = traceContextInfo.SpanId;
+
+                Console.WriteLine($"[!dt dt.trace_id={traceId},dt.span_id={spanId}] Processing request");
+
+                oneAgentSdk.AddCustomRequestAttribute("exampleAttribute", "exampleValue");
+
+                // Simulate some work
+                await Task.Delay(100);
+
+                string responseString = "Hello from Dynatrace OneAgent SDK Demo!";
+                byte[] buffer = System.Text.Encoding.UTF8.GetBytes(responseString);
+                response.ContentLength64 = buffer.Length;
+                response.OutputStream.Write(buffer, 0, buffer.Length);
+                response.Close();
+
+                Console.WriteLine($"[!dt dt.trace_id={traceId},dt.span_id={spanId}] Request processed");
+            }
+        }
+    }
 }
-
-app.UseHttpsRedirection();
-app.UseStaticFiles();
-
-app.UseRouting();
-
-app.MapGet("/", async (HttpContext context, ILogger<Program> logger, IOneAgentSdk sdk) =>
-{
-    var traceContextInfo = sdk.TraceContextInfo;
-    var traceId = traceContextInfo.TraceId;
-    var spanId = traceContextInfo.SpanId;
-
-    logger.LogInformation($"[!dt dt.trace_id={traceId},dt.span_id={spanId}] Processing request");
-
-    sdk.AddCustomRequestAttribute("exampleAttribute", "exampleValue");
-
-    // Simulate some work
-    await Task.Delay(100);
-
-    await context.Response.WriteAsync("Hello from Dynatrace OneAgent SDK Demo!");
-
-    logger.LogInformation($"[!dt dt.trace_id={traceId},dt.span_id={spanId}] Request processed");
-});
-
-app.Run();
