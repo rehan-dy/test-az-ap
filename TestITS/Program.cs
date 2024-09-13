@@ -1,20 +1,41 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using System;
+using System.Net;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Dynatrace.OneAgent.Sdk.Api;
-using System.Threading.Tasks;
+using Serilog;
 
 public class Program
 {
     public static void Main(string[] args)
     {
-        CreateHostBuilder(args).Build().Run();
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.Console()
+            .WriteTo.File("logs/myapp.txt", rollingInterval: RollingInterval.Day)
+            .CreateLogger();
+
+        try
+        {
+            Log.Information("Starting web host");
+            CreateHostBuilder(args).Build().Run();
+        }
+        catch (Exception ex)
+        {
+            Log.Fatal(ex, "Host terminated unexpectedly");
+        }
+        finally
+        {
+            Log.CloseAndFlush();
+        }
     }
 
     public static IHostBuilder CreateHostBuilder(string[] args) =>
         Host.CreateDefaultBuilder(args)
+            .UseSerilog()
             .ConfigureWebHostDefaults(webBuilder =>
             {
                 webBuilder.UseStartup<Startup>();
@@ -51,7 +72,7 @@ public class Startup
                 var traceId = traceContextInfo.TraceId;
                 var spanId = traceContextInfo.SpanId;
 
-                System.Console.WriteLine($"[!dt dt.trace_id={traceId},dt.span_id={spanId}] Processing request");
+                Log.Information("[!dt dt.trace_id={TraceId},dt.span_id={SpanId}] Processing request", traceId, spanId);
 
                 oneAgentSdk.AddCustomRequestAttribute("exampleAttribute", "exampleValue");
 
@@ -60,7 +81,7 @@ public class Startup
 
                 await context.Response.WriteAsync("Hello from Dynatrace OneAgent SDK Demo!");
 
-                System.Console.WriteLine($"[!dt dt.trace_id={traceId},dt.span_id={spanId}] Request processed");
+                Log.Information("[!dt dt.trace_id={TraceId},dt.span_id={SpanId}] Request processed", traceId, spanId);
             });
         });
     }
