@@ -1,48 +1,67 @@
-﻿using System;
-using System.Net;
-using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Dynatrace.OneAgent.Sdk.Api;
+using System.Threading.Tasks;
 
-class Program
+public class Program
 {
-    static async Task Main(string[] args)
+    public static void Main(string[] args)
     {
-        // Create OneAgent SDK instance
-        IOneAgentSdk oneAgentSdk = OneAgentSdkFactory.CreateInstance();
+        CreateHostBuilder(args).Build().Run();
+    }
 
-        // Set up a simple HTTP server
-        string url = "http://*:80/";
-        using (var listener = new HttpListener())
-        {
-            listener.Prefixes.Add(url);
-            listener.Start();
-            Console.WriteLine($"Listening on {url}");
-
-            while (true)
+    public static IHostBuilder CreateHostBuilder(string[] args) =>
+        Host.CreateDefaultBuilder(args)
+            .ConfigureWebHostDefaults(webBuilder =>
             {
-                var context = await listener.GetContextAsync();
-                var response = context.Response;
+                webBuilder.UseStartup<Startup>();
+            });
+}
 
+public class Startup
+{
+    private readonly IOneAgentSdk oneAgentSdk;
+
+    public Startup()
+    {
+        oneAgentSdk = OneAgentSdkFactory.CreateInstance();
+    }
+
+    public void ConfigureServices(IServiceCollection services)
+    {
+    }
+
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+
+        app.UseRouting();
+
+        app.UseEndpoints(endpoints =>
+        {
+            endpoints.MapGet("/", async context =>
+            {
                 var traceContextInfo = oneAgentSdk.TraceContextInfo;
                 var traceId = traceContextInfo.TraceId;
                 var spanId = traceContextInfo.SpanId;
 
-                Console.WriteLine($"[!dt dt.trace_id={traceId},dt.span_id={spanId}] Processing request");
+                System.Console.WriteLine($"[!dt dt.trace_id={traceId},dt.span_id={spanId}] Processing request");
 
                 oneAgentSdk.AddCustomRequestAttribute("exampleAttribute", "exampleValue");
 
                 // Simulate some work
                 await Task.Delay(100);
 
-                string responseString = "Hello from Dynatrace OneAgent SDK Demo!";
-                byte[] buffer = System.Text.Encoding.UTF8.GetBytes(responseString);
-                response.ContentLength64 = buffer.Length;
-                response.OutputStream.Write(buffer, 0, buffer.Length);
-                response.Close();
+                await context.Response.WriteAsync("Hello from Dynatrace OneAgent SDK Demo!");
 
-                Console.WriteLine($"[!dt dt.trace_id={traceId},dt.span_id={spanId}] Request processed");
-            }
-        }
+                System.Console.WriteLine($"[!dt dt.trace_id={traceId},dt.span_id={spanId}] Request processed");
+            });
+        });
     }
 }
