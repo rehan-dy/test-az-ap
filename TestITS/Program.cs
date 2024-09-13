@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Net;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Dynatrace.OneAgent.Sdk.Api;
 using Serilog;
+using Newtonsoft.Json.Linq;
 
 public class Program
 {
@@ -43,15 +45,26 @@ public class Program
             });
 }
 
-
 public class Startup
 {
     private readonly IOneAgentSdk oneAgentSdk;
+    private readonly string processGroupInstanceId;
 
     public Startup()
     {
         oneAgentSdk = OneAgentSdkFactory.CreateInstance() ?? throw new InvalidOperationException("Failed to initialize OneAgent SDK.");
         Log.Information("OneAgent SDK initialized successfully.");
+
+        // Load metadata
+        processGroupInstanceId = LoadProcessGroupInstanceId();
+        if (!string.IsNullOrEmpty(processGroupInstanceId))
+        {
+            Log.Information("Process Group Instance ID: {ProcessGroupInstanceId}", processGroupInstanceId);
+        }
+        else
+        {
+            Log.Warning("Process Group Instance ID not found.");
+        }
     }
 
     public void ConfigureServices(IServiceCollection services)
@@ -81,7 +94,7 @@ public class Startup
                 }
                 else
                 {
-                    Log.Information("[!dt dt.trace_id={TraceId},dt.span_id={SpanId}] Processing request", traceId, spanId);
+                    Log.Information("[!dt dt.trace_id={TraceId},dt.span_id={SpanId},dt.process_group_instance={ProcessGroupInstanceId}] Processing request", traceId, spanId, processGroupInstanceId);
                 }
 
                 oneAgentSdk.AddCustomRequestAttribute("exampleAttribute", "exampleValue");
@@ -91,8 +104,31 @@ public class Startup
 
                 await context.Response.WriteAsync("Hello from Dynatrace OneAgent SDK Demo!");
 
-                Log.Information("[!dt dt.trace_id={TraceId},dt.span_id={SpanId}] Request processed", traceId, spanId);
+                Log.Information("[!dt dt.trace_id={TraceId},dt.span_id={SpanId},dt.process_group_instance={ProcessGroupInstanceId}] Request processed", traceId, spanId, processGroupInstanceId);
             });
         });
     }
+
+    private string? LoadProcessGroupInstanceId()
+    {
+        string[] metadataFiles = { "dt_metadata_e617c525669e072eebe3d0f08212e8f2.json", "/var/lib/dynatrace/enrichment/dt_metadata.json" };
+        foreach (var file in metadataFiles)
+        {
+            try
+            {
+                var json = File.ReadAllText(file);
+                var jsonObject = JObject.Parse(json);
+                if (jsonObject.TryGetValue("dt.entity.process_group_instance", out var processGroupInstanceId))
+                {
+                    return processGroupInstanceId.ToString();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("Failed to load metadata from {File}: {Exception}", file, ex);
+            }
+        }
+        return null;
+    }
+
 }
