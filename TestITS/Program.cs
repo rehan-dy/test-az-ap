@@ -39,8 +39,10 @@ public class Program
             .ConfigureWebHostDefaults(webBuilder =>
             {
                 webBuilder.UseStartup<Startup>();
+                Log.Information("Web host configured with Startup class");
             });
 }
+
 
 public class Startup
 {
@@ -48,7 +50,8 @@ public class Startup
 
     public Startup()
     {
-        oneAgentSdk = OneAgentSdkFactory.CreateInstance();
+        oneAgentSdk = OneAgentSdkFactory.CreateInstance() ?? throw new InvalidOperationException("Failed to initialize OneAgent SDK.");
+        Log.Information("OneAgent SDK initialized successfully.");
     }
 
     public void ConfigureServices(IServiceCollection services)
@@ -72,7 +75,14 @@ public class Startup
                 var traceId = traceContextInfo.TraceId;
                 var spanId = traceContextInfo.SpanId;
 
-                Log.Information("[!dt dt.trace_id={TraceId},dt.span_id={SpanId}] Processing request", traceId, spanId);
+                if (string.IsNullOrEmpty(traceId) || string.IsNullOrEmpty(spanId))
+                {
+                    Log.Warning("TraceId or SpanId is null or empty.");
+                }
+                else
+                {
+                    Log.Information("[!dt dt.trace_id={TraceId},dt.span_id={SpanId}] Processing request", traceId, spanId);
+                }
 
                 oneAgentSdk.AddCustomRequestAttribute("exampleAttribute", "exampleValue");
 
